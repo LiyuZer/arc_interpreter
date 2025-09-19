@@ -54,7 +54,6 @@ print(f"Number of training examples: {len(train_data)}")
 print(f"Number of validation examples: {len(val_data)}")
 
 # ============= NEW TRAINING CODE =============
-
 # Check CUDA availability and debug info
 print(f"CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
@@ -71,7 +70,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.float16,  # Use fp16 for memory efficiency
-    device_map="cuda:0"  # Explicitly use GPU 0
+    device_map="cuda:0"  # Explicitly set to GPU 0
 )
 
 # Add padding token if not present
@@ -123,13 +122,6 @@ training_args = TrainingArguments(
     evaluation_strategy="steps",
     eval_steps=50,
     save_strategy="steps",
-    save_steps=100,
-    save_total_limit=2,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    greater_is_better=False,
-    report_to="none",  # Set to "wandb" or "tensorboard" if you want logging
-)steps",
     save_steps=100,
     save_total_limit=2,
     load_best_model_at_end=True,
