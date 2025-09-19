@@ -1,0 +1,30 @@
+# Core dependencies for Qwen 3B SFT training
+transformers>=4.44.0
+datasets>=2.14.0
+torch>=2.0.0
+accelerate>=0.24.0
+
+# Tokenizer and model utilities
+tokenizers>=0.19.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# Model saving and loading
+safetensors>=0.4.0
+huggingface_hub>=0.19.0
+
+# Numerical and utility libraries
+numpy>=1.24.0
+scipy>=1.10.0
+tqdm>=4.65.0
+
+# Your custom loader (assuming it's a local package or installable)
+# arc_loader
+
+# Optional: For monitoring and logging
+# wandb>=0.15.0
+# tensorboard>=2.13.0
+
+# Optional: For better performance with large models
+# bitsandbytes>=0.41.0
+# peft>=0.5.0
