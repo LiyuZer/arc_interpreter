@@ -55,13 +55,23 @@ print(f"Number of validation examples: {len(val_data)}")
 
 # ============= NEW TRAINING CODE =============
 
+# Check CUDA availability and debug info
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA device count: {torch.cuda.device_count()}")
+    print(f"Current CUDA device: {torch.cuda.current_device()}")
+    print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
+    torch.cuda.set_device(0)  # Explicitly set to GPU 0
+else:
+    raise RuntimeError("CUDA is not available. Please check your PyTorch installation.")
+
 # Load Qwen 3B model and tokenizer
 model_name = "Qwen/Qwen2.5-3B"  # or "Qwen/Qwen2.5-3B-Instruct" for instruction-tuned version
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.float16,  # Use fp16 for memory efficiency
-    device_map="auto"
+    device_map="cuda:0"  # Explicitly use GPU 0
 )
 
 # Add padding token if not present
@@ -113,6 +123,13 @@ training_args = TrainingArguments(
     evaluation_strategy="steps",
     eval_steps=50,
     save_strategy="steps",
+    save_steps=100,
+    save_total_limit=2,
+    load_best_model_at_end=True,
+    metric_for_best_model="eval_loss",
+    greater_is_better=False,
+    report_to="none",  # Set to "wandb" or "tensorboard" if you want logging
+)steps",
     save_steps=100,
     save_total_limit=2,
     load_best_model_at_end=True,
