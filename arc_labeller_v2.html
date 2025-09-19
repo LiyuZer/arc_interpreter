@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ARC Labeller — Blueprint v2</title>
+  <style>
+    :root{
+      --bg:#0b0e12;
+      --panel:#151a21;
+      --border:#232a34;
+      --muted:#9aa4b2;
+      --accent:#3b82f6;
+      --radius:14px;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{margin:0; padding:16px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;
+         background:linear-gradient(180deg,#0b0e12 0%, #0e131a 100%); color:#e5e7eb;}
+    .topbar{display:flex; gap:12px; align-items:center; margin-bottom:12px;}
+    .hash{font-weight:700;}
+    .indicator{width:14px; height:14px; border-radius:999px; background:#555; box-shadow:0 0 10px rgba(0,0,0,.25); transition:.2s}
+    .indicator.good{background:#10b981; box-shadow:0 0 16px #10b981;}
+    .indicator.bad{background:#ef4444; box-shadow:0 0 16px #ef4444;}
+    .wrap{display:grid; grid-template-columns: 260px 1fr 380px; gap:16px; align-items:start;}
+    .card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px;}
+    .h{margin:0 0 10px 0; font-size:14px; color:#e5e7eb;}
+    .muted{color:var(--muted); font-size:12px;}
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    .btn{border:1px solid var(--border); background:#0f172a; color:#e5e7eb; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600;}
+    .btn.primary{background:var(--accent); color:#fff;}
+    .btn:active{transform:translateY(1px);}
+    select, input[type=number], textarea{
+      border:1px solid var(--border); background:#0f1520; color:#e5e7eb; border-radius:10px; padding:8px; font:inherit;
+    }
+    textarea{width:100%; min-height:96px; resize:vertical;}
+    .list{width:100%; height:180px; border:1px dashed var(--border); border-radius:10px; overflow:auto; padding:6px; background:#0f1520;}
+    .list.small{height:140px}
+    .item{padding:6px 8px; border-radius:8px; margin-bottom:6px; border:1px solid #1f2732; display:flex; justify-content:space-between; gap:8px; background:#0e131b;}
+    .chip{display:inline-block; padding:2px 6px; margin:2px; border-radius:6px; background:#0f1520; border:1px solid #1f2732; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:11px; color:#cbd5e1}
+    .x{cursor:pointer; color:#f87171; font-weight:700;}
+    .section{border-top:1px solid var(--border); margin-top:10px; padding-top:10px;}
+    .section .h{margin-top:0}
+    canvas{border:1px solid var(--border); border-radius:10px; background:#0b0f16;}
+    .pair{display:grid; grid-template-columns: 1fr 24px 1fr; gap:10px; align-items:center;}
+    .arrow{color:var(--muted); text-align:center;}
+    .palette{display:grid; grid-template-columns: repeat(10, 1fr); gap:6px; width:260px;}
+    .sw{display:flex; align-items:center; justify-content:center; gap:6px; height:28px; border-radius:8px; border:2px solid rgba(255,255,255,.08); cursor:pointer; font-size:12px; font-weight:700; color:#000; text-shadow: 0 1px 0 rgba(255,255,255,.4);}
+    .sw.sel{outline:3px solid #93c5fd;}
+    .tasks{width:100%; height:340px;}
+    .gridtitle{display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#cbd5e1; margin-bottom:6px;}
+    /* All-train grid */
+    .trainGrid{display:grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap:10px; max-height:380px; overflow:auto;}
+    .trainItem{border:1px solid #1f2732; border-radius:10px; padding:6px; background:#0e131b; cursor:pointer;}
+    .trainItem.sel{outline:2px solid #93c5fd;}
+    .smallpair{display:grid; grid-template-columns: 1fr 16px 1fr; gap:6px; align-items:center;}
+    .smallLabel{font-size:11px; color:#cbd5e1; margin-bottom:4px;}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="hash">Hash: <span id="hash">—</span></div>
+    <label class="muted">Split</label>
+    <select id="split">
+      <option value="training">training</option>
+      <option value="evaluation">evaluation</option>
+    </select>
+    <button id="submit" class="btn">Check</button>
+    <button id="save" class="btn primary">Save</button>
+    <button id="downloadSaved" class="btn">Download Saved</button>
+    <div id="indicator" class="indicator"></div>
+  </div>
+
+  <div class="wrap">
+    <!-- LEFT: tasks + recent saves -->
+    <div class="card">
+      <h3 class="h">All ARC Tasks</h3>
+      <select id="allTasks" size="14" class="tasks"></select>
+      <div class="section">
+        <div class="row" style="justify-content:space-between; width:100%">
+          <span class="muted">Recent Saves</span>
+          <button id="refreshRecent" class="btn">Refresh</button>
+        </div>
+        <div class="list small" id="recentList"></div>
+      </div>
+    </div>
+
+    <!-- CENTER: Train pairs + Test editor -->
+    <div class="card">
+      <div class="row">
+        <label class="muted">Task</label>
+        <select id="task"></select>
+        <label class="muted">Train ex</label>
+        <select id="trainIdx"></select>
+        <label class="muted">Test</label>
+        <select id="testIdx"></select>
+      </div>
+
+      <!-- Train example pair -->
+      <div class="section">
+        <div class="gridtitle"><span>Train Example (read‑only)</span></div>
+        <div class="pair">
+          <div>
+            <div class="muted small">Input</div>
+            <canvas id="trainInput" width="300" height="300"></canvas>
+          </div>
+          <div class="arrow">→</div>
+          <div>
+            <div class="muted small">Output</div>
+            <canvas id="trainOutput" width="300" height="300"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- All Train Examples -->
+      <div class="section">
+        <div class="gridtitle"><span>All Train Examples</span><span class="muted">Click to select</span></div>
+        <div id="allTrain" class="trainGrid"></div>
+      </div>
+
+      <!-- Test input + editable output -->
+      <div class="section">
+        <div class="gridtitle"><span>Test Editor</span>
+          <div class="row">
+            <button id="copyFromInput" class="btn">Copy from input</button>
+            <button id="clearGrid" class="btn">Clear</button>
+            <button id="resetGrid" class="btn">Reset</button>
+          </div>
+        </div>
+        <div class="pair">
+          <div>
+            <div class="muted small">Input</div>
+            <canvas id="testInput" width="300" height="300"></canvas>
+          </div>
+          <div class="arrow">→</div>
+          <div>
+            <div class="muted small">Output (editable)</div>
+            <canvas id="testOutput" width="300" height="300"></canvas>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div class="palette" id="palette"></div>
+          <div class="row">
+            <label class="muted">Mode</label>
+            <select id="mode">
+              <option value="brush">Brush</option>
+              <option value="rect">Rect</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="muted">Rows</label>
+            <input type="number" id="rows" min="1" max="50" value="3"/>
+            <label class="muted">Cols</label>
+            <input type="number" id="cols" min="1" max="50" value="3"/>
+            <button id="resize" class="btn">Resize</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Inst + hashes -->
+    <div class="card">
+      <h3 class="h">Inst</h3>
+      <textarea id="instText" placeholder="Write inst here..."></textarea>
+      <div class="row">
+        <button id="saveInst" class="btn">Save Inst</button>
+        <button id="delInst" class="btn">Delete Last</button>
+      </div>
+      <div class="list" id="instList"></div>
+
+      <div class="section">
+        <div class="row" style="justify-content:space-between; width:100%">
+          <span class="muted">LLM Variations</span>
+          <button id="clearVars" class="btn">Clear</button>
+        </div>
+        <div id="varsList"></div>
+      </div>
+
+      <div class="section">
+        <div class="row" style="justify-content:space-between; width:100%">
+          <span class="muted">Task Hashes</span>
+          <button id="refreshHashes" class="btn">Refresh</button>
+        </div>
+        <div class="muted" id="hashCounts">—</div>
+        <div style="margin-top:6px;">
+          <div class="muted" style="margin-bottom:4px;">GT Hashes</div>
+          <div id="gtHashes"></div>
+        </div>
+        <div style="margin-top:6px;">
+          <div class="muted" style="margin-bottom:4px;">Saved Output Hashes</div>
+          <div id="savedHashes"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ---------- API Base ----------
+  const API_BASE = ""; // same origin; change to http://localhost:5000 if opening file directly
+
+  // ---------- Dataset (dynamic from API, fallback mock) ----------
+  const MOCK_DATASET = [
+    {
+      task_id: "0a1b2c3d",
+      train: [
+        {input:[[0,0,0,0,0],[0,1,1,1,0],[0,1,0,1,0],[0,1,1,1,0],[0,0,0,0,0]],
+         output:[[0,0,0,0,0],[0,1,1,1,0],[0,1,1,1,0],[0,1,1,1,0],[0,0,0,0,0]]},
+        {input:[[0,2,0,2,0],[2,0,2,0,2],[0,2,0,2,0],[2,0,2,0,2],[0,2,0,2,0]],
+         output:[[0,2,0,2,0],[2,2,2,2,2],[0,2,0,2,0],[2,2,2,2,2],[0,2,0,2,0]]},
+      ],
+      test: [
+        {input:[[3,0,0],[0,0,0],[0,0,4]], output:[[3,0,0],[0,0,0],[0,0,4]]},
+        {input:[[0,0,0,0],[0,5,5,0],[0,5,5,0],[0,0,0,0]], output:[[0,0,0,0],[0,5,5,0],[0,5,5,0],[0,0,0,0]]},
+      ]
+    }
+  ];
+
+  // ---------- Colors ----------
+  const COLORS = {
+    0:"#101317",
+    1:"#000000", 2:"#1f4aff", 3:"#10b981", 4:"#ef4444", 5:"#f59e0b",
+    6:"#fb923c", 7:"#8b5cf6", 8:"#06b6d4", 9:"#9ca3af"
+  };
+
+  // ---------- State & DOM ----------
+  const S = {
+    split: "training",
+    task: 0, trainIdx: 0, testIdx: 0,
+    output: [],
+    color: 1, mode: "brush",
+    inst: {},
+    vars: {},
+    okMap: {}, // persists green indicator after a successful Check/Save
+    drag: false, rectStart: null,
+    taskIds: [],
+    gt: null, // list of GT outputs or null
+    currentTaskId: null,
+  };
+
+  const $ = (id)=>document.getElementById(id);
+  const els = {
+    hash: $("hash"), indicator: $("indicator"),
+    split: $("split"),
+    task: $("task"), trainIdx: $("trainIdx"), testIdx: $("testIdx"),
+    allTasks: $("allTasks"),
+    trainIn: $("trainInput"), trainOut: $("trainOutput"),
+    testIn: $("testInput"), testOut: $("testOutput"),
+    palette: $("palette"), mode: $("mode"), rows: $("rows"), cols: $("cols"), resize: $("resize"),
+    copyFromInput: $("copyFromInput"), clearGrid: $("clearGrid"), resetGrid: $("resetGrid"),
+    submit: $("submit"), save: $("save"), downloadSaved: $("downloadSaved"),
+    instText: $("instText"), saveInst: $("saveInst"), delInst: $("delInst"), instList: $("instList"),
+    refreshRecent: $("refreshRecent"), recentList: $("recentList"),
+    refreshHashes: $("refreshHashes"), gtHashes: $("gtHashes"), savedHashes: $("savedHashes"), hashCounts: $("hashCounts"),
+    allTrain: $("allTrain"),
+    clearVars: $("clearVars"), varsList: $("varsList"),
+  };
+
+  // ---------- Utils ----------
+  function copyGrid(g){ return JSON.parse(JSON.stringify(g)); }
+  function gridHash(g){
+    const flat = g.flat().join(",");
+    let h=0; for (let i=0;i<flat.length;i++){ h=((h<<5)-h)+flat.charCodeAt(i); h|=0; }
+    return ("00000000"+(h>>>0).toString(16)).slice(-8);
+  }
+  function setIndicator(x){
+    els.indicator.className = "indicator";
+    if (x===true) els.indicator.classList.add("good");
+    else if (x===false) els.indicator.classList.add("bad");
+  }
+  async function getJSON(url){
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    return r.json();
+  }
+  async function postJSON(url, body){
+    const r = await fetch(url,{method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    return r.json();
+  }
+  function persistInst(){ try{ localStorage.setItem("inst_map", JSON.stringify(S.inst)); }catch(e){} }
+  function loadPersistedInst(){ try{ const raw = localStorage.getItem("inst_map"); if (raw){ S.inst = JSON.parse(raw) || {}; } }catch(e){} }
+  function persistVars(){ try{ localStorage.setItem("inst_vars_map", JSON.stringify(S.vars)); }catch(e){} }
+  function loadPersistedVars(){ try{ const raw = localStorage.getItem("inst_vars_map"); if (raw){ S.vars = JSON.parse(raw) || {}; } }catch(e){} }
+  function persistOk(){ try{ localStorage.setItem("ok_map", JSON.stringify(S.okMap)); }catch(e){} }
+  function loadPersistedOk(){ try{ const raw = localStorage.getItem("ok_map"); if (raw){ S.okMap = JSON.parse(raw) || {}; } }catch(e){} }
+  function renderHashes(container, arr){
+    container.innerHTML = "";
+    (arr||[]).forEach(h=>{
+      const span = document.createElement("span");
+      span.className = "chip";
+      span.textContent = h;
+      container.appendChild(span);
+    });
+  }
+  function escapeHtml(s){
+    return (""+s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+  }
+
+  function currentTaskId(){ return S.currentTaskId || (ARC_DATASET[0] && ARC_DATASET[0].task_id) || ""; }
+  function currentKey(){ return `${S.split}::${currentTaskId()}::${S.testIdx}`; }
+  function markOkPersistent(){ S.okMap[currentKey()] = true; persistOk(); }
+  function applyPersistentIndicator(){ if (S.okMap[currentKey()] === true) setIndicator(true); }
+
+  // ---------- Draw ----------
+  function drawCanvas(canvas, grid){
+    if (!grid || !grid.length || !grid[0].length){
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      return;
+    }
+    const ctx = canvas.getContext("2d");
+    const H = grid.length, W = grid[0].length;
+    const cw = canvas.width / W; const ch = canvas.height / H;
+    for (let r=0;r<H;r++){
+      for (let c=0;c<W;c++){
+        ctx.fillStyle = COLORS[grid[r][c]] || "#111827";
+        ctx.fillRect(c*cw, r*ch, cw, ch);
+      }
+    }
+    ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 1;
+    for (let c=0;c<=W;c++){ ctx.beginPath(); ctx.moveTo(c*cw+.5,0); ctx.lineTo(c*cw+.5,canvas.height); ctx.stroke(); }
+    for (let r=0;r<=H;r++){ ctx.beginPath(); ctx.moveTo(0,r*ch+.5); ctx.lineTo(canvas.width,r*ch+.5); ctx.stroke(); }
+  }
+  function posToCell(canvas, x, y, grid){
+    const H = grid.length, W = grid[0].length;
+    const cw = canvas.width / W, ch = canvas.height / H;
+    let c = Math.floor(x / cw), r = Math.floor(y / ch);
+    if (c<0) c=0; if (r<0) r=0; if (c>=W) c=W-1; if (r>=H) r=H-1;
+    return {r,c};
+  }
+
+  // ---------- Palette ----------
+  function buildPalette(){
+    els.palette.innerHTML="";
+    Object.keys(COLORS).forEach(k=>{
+      const div=document.createElement("div");
+      div.className="sw"; div.style.background=COLORS[k];
+      if (+k===S.color) div.classList.add("sel");
+      div.textContent=k;
+      div.onclick=()=>{
+        document.querySelectorAll(".sw").forEach(e=>e.classList.remove("sel"));
+        div.classList.add("sel"); S.color=+k;
+      };
+      els.palette.appendChild(div);
+    });
+  }
+
+  // ---------- Data Binding ----------
+  let ARC_DATASET = []; // current task as single-element array: [{task_id, train, test}]
+
+  function syncSelectors(){
+    // Task selector (single current)
+    els.task.innerHTML="";
+    const curr = ARC_DATASET[0];
+    if (curr){
+      const o=document.createElement("option"); o.value=0; o.textContent=curr.task_id; els.task.appendChild(o);
+      els.task.value = 0;
+    }
+    // Left allTasks list from S.taskIds
+    els.allTasks.innerHTML="";
+    S.taskIds.forEach(id=>{
+      const o=document.createElement("option"); o.value=id; o.textContent=id; els.allTasks.appendChild(o);
+    });
+    if (S.currentTaskId){ els.allTasks.value = S.currentTaskId; }
+
+    // Train
+    els.trainIdx.innerHTML="";
+    const trains = curr?.train || [];
+    trains.forEach((_,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=`${i+1}`; els.trainIdx.appendChild(o); });
+    els.trainIdx.value = S.trainIdx;
+
+    // Test
+    els.testIdx.innerHTML="";
+    const tests = curr?.test || [];
+    tests.forEach((_,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=`${i+1}`; els.testIdx.appendChild(o); });
+    els.testIdx.value = S.testIdx;
+
+    // Render all train examples (thumbnails)
+    renderAllTrain();
+  }
+
+  function loadTrainPair(){
+    const curr = ARC_DATASET[0]; if (!curr) return;
+    const ex = curr.train[S.trainIdx]; if (!ex) { drawCanvas(els.trainIn, [[0]]); drawCanvas(els.trainOut, [[0]]); return; }
+    drawCanvas(els.trainIn, ex.input);
+    drawCanvas(els.trainOut, ex.output);
+    // keep thumbnails in sync selection
+    highlightSelectedTrain();
+  }
+
+  function renderAllTrain(){
+    const cont = els.allTrain; if (!cont) return;
+    const curr = ARC_DATASET[0];
+    cont.innerHTML = "";
+    const trains = curr?.train || [];
+    if (!trains.length){ cont.innerHTML = '<div class="muted">No train examples</div>'; return; }
+    trains.forEach((ex,i)=>{
+      const item = document.createElement("div"); item.className = "trainItem" + (i===S.trainIdx?" sel":"");
+      const lab = document.createElement("div"); lab.className = "smallLabel"; lab.textContent = `Train ${i+1}`;
+      const pair = document.createElement("div"); pair.className = "smallpair";
+      const cin = document.createElement("canvas"); cin.width=160; cin.height=160;
+      const arr = document.createElement("div"); arr.className = "arrow"; arr.textContent = "→";
+      const cout = document.createElement("canvas"); cout.width=160; cout.height=160;
+      pair.appendChild(cin); pair.appendChild(arr); pair.appendChild(cout);
+      item.appendChild(lab); item.appendChild(pair);
+      item.onclick = ()=>{ S.trainIdx=i; syncSelectors(); loadTrainPair(); };
+      cont.appendChild(item);
+      drawCanvas(cin, ex.input);
+      drawCanvas(cout, ex.output);
+    });
+  }
+
+  function highlightSelectedTrain(){
+    // Toggle .sel class on thumbnails
+    const cont = els.allTrain; if (!cont) return;
+    Array.from(cont.querySelectorAll('.trainItem')).forEach((el, idx)=>{
+      if (idx===S.trainIdx) el.classList.add('sel'); else el.classList.remove('sel');
+    });
+  }
+
+  function loadTest(){
+    const curr = ARC_DATASET[0]; if (!curr) return;
+    const test = curr.test[S.testIdx]; if (!test) { drawCanvas(els.testIn, [[0]]); drawCanvas(els.testOut, [[0]]); return; }
+    drawCanvas(els.testIn, test.input);
+    S.output = copyGrid(test.input); // editable copy by default
+    els.rows.value = S.output.length;
+    els.cols.value = S.output[0].length;
+    drawCanvas(els.testOut, S.output);
+    els.hash.textContent = gridHash(S.output);
+    setIndicator(null);
+    refreshInst();
+    refreshVars();
+    refreshHashes();
+    // Persist indicator across reloads if a correct save exists or from local Check
+    checkSavedStatus();
+    applyPersistentIndicator();
+  }
+
+  // ---------- Inst ----------
+  function refreshInst(){
+    const curr = ARC_DATASET[0]; if (!curr) return;
+    const id = curr.task_id;
+    const arr = S.inst[id] || [];
+    els.instList.innerHTML="";
+    arr.forEach((txt, idx)=>{
+      const row=document.createElement("div"); row.className="item";
+      const span=document.createElement("div"); span.textContent=txt; span.style.flex="1"; span.style.whiteSpace = 'pre-wrap';
+      const rm=document.createElement("div"); rm.textContent="×"; rm.className="x"; rm.title="Delete";
+      rm.onclick=()=>{ arr.splice(idx,1); S.inst[id]=arr; persistInst(); refreshInst(); };
+      row.appendChild(span); row.appendChild(rm); els.instList.appendChild(row);
+    });
+  }
+
+  function refreshVars(){
+    const curr = ARC_DATASET[0]; if (!curr) return;
+    const id = curr.task_id;
+    const arr = S.vars[id] || [];
+    const cont = els.varsList;
+    cont.innerHTML = "";
+    if (!arr.length){ cont.innerHTML = '<div class="muted">No variations</div>'; return; }
+    const ol = document.createElement('ol');
+    ol.style.paddingLeft = '18px';
+    ol.style.margin = '0';
+    arr.forEach(v=>{
+      const li = document.createElement('li'); li.style.margin = '4px 0';
+      const span = document.createElement('span'); span.className = 'chip'; span.style.whiteSpace = 'pre-wrap'; span.textContent = v;
+      li.appendChild(span); ol.appendChild(li);
+    });
+    cont.appendChild(ol);
+  }
+
+  // ---------- Painting on editable canvas ----------
+  function paintCell(r,c,color){ S.output[r][c]=color; }
+  function paintRect(r0,c0,r1,c1,color){
+    const rmin=Math.min(r0,r1), rmax=Math.max(r0,r1);
+    const cmin=Math.min(c0,c1), cmax=Math.max(c0,c1);
+    for (let r=rmin;r<=rmax;r++){ for (let c=cmin;c<=cmax;c++){ paintCell(r,c,color); } }
+  }
+
+  function redrawOut(){
+    drawCanvas(els.testOut, S.output);
+    els.hash.textContent = gridHash(S.output);
+  }
+
+  function bindCanvas(){
+    const canvas = els.testOut;
+    canvas.onmousedown = (e)=>{
+      const rect = canvas.getBoundingClientRect();
+      const {r,c} = posToCell(canvas, e.clientX-rect.left, e.clientY-rect.top, S.output);
+      S.drag = true;
+      if (S.mode==="brush"){ paintCell(r,c,S.color); redrawOut(); }
+      else { S.rectStart = {r,c}; }
+    };
+    canvas.onmousemove = (e)=>{
+      if (!S.drag) return;
+      if (S.mode==="brush"){
+        const rect = canvas.getBoundingClientRect();
+        const {r,c} = posToCell(canvas, e.clientX-rect.left, e.clientY-rect.top, S.output);
+        paintCell(r,c,S.color); redrawOut();
+      }
+    };
+    window.onmouseup = (e)=>{
+      if (!S.drag) return; S.drag=false;
+      if (S.mode==="rect" && S.rectStart){
+        const rect = canvas.getBoundingClientRect();
+        const {r,c} = posToCell(canvas, e.clientX-rect.left, e.clientY-rect.top, S.output);
+        paintRect(S.rectStart.r, S.rectStart.c, r, c, S.color);
+        S.rectStart=null; redrawOut();
+      }
+    };
+  }
+
+  // ---------- API-driven loading ----------
+  async function loadTaskIds(){
+    try{
+      const data = await getJSON(`${API_BASE}/api/tasks?split=${encodeURIComponent(S.split)}`);
+      S.taskIds = data.task_ids || [];
+    }catch(err){
+      console.warn("Falling back to MOCK_DATASET due to /api/tasks error:", err);
+      S.taskIds = MOCK_DATASET.map(t=>t.task_id);
+    }
+  }
+
+  async function loadTaskById(id){
+    try{
+      const data = await getJSON(`${API_BASE}/api/task/${encodeURIComponent(id)}?split=${encodeURIComponent(S.split)}`);
+      ARC_DATASET = [{ task_id: data.task_id, train: data.train||[], test: data.test||[] }];
+      S.gt = data.gt || null;
+      S.currentTaskId = data.task_id;
+    }catch(err){
+      console.warn("Falling back to MOCK_DATASET for task due to /api/task error:", err);
+      ARC_DATASET = [MOCK_DATASET[0]];
+      S.gt = null;
+      S.currentTaskId = ARC_DATASET[0].task_id;
+    }
+    S.task = 0; S.trainIdx = 0; S.testIdx = 0;
+    syncSelectors();
+    loadTrainPair();
+    loadTest();
+  }
+
+  async function refreshHashes(){
+    const curr = ARC_DATASET[0]; if (!curr) return;
+    try{
+      const data = await getJSON(`${API_BASE}/api/task_hashes/${encodeURIComponent(curr.task_id)}?split=${encodeURIComponent(S.split)}`);
+      const gt = data.gt_hashes || []; const saved = data.saved_output_hashes || [];
+      els.hashCounts.textContent = `GT: ${gt.length} · Saved: ${saved.length}`;
+      renderHashes(els.gtHashes, gt);
+      renderHashes(els.savedHashes, saved);
+    }catch(e){
+      els.hashCounts.textContent = "—";
+      els.gtHashes.innerHTML = ""; els.savedHashes.innerHTML = "";
+    }
+  }
+
+  // Persist indicator across restarts based on saved correct record
+  async function checkSavedStatus(){
+    const curr = ARC_DATASET[0]; if (!curr) return;
+    try{
+      const url = `${API_BASE}/api/saved/status?task_id=${encodeURIComponent(curr.task_id)}&split=${encodeURIComponent(S.split)}&test_index=${encodeURIComponent(S.testIdx)}`;
+      const data = await getJSON(url);
+      if (data && data.exists && data.ok === true){
+        setIndicator(true);
+        if (data.output_hash){ els.hash.textContent = data.output_hash; }
+        // also persist locally
+        markOkPersistent();
+      }
+    }catch(e){ /* silent */ }
+  }
+
+  async function refreshRecent(){
+    try{
+      const data = await getJSON(`${API_BASE}/api/saved?limit=20`);
+      const items = data.items || [];
+      els.recentList.innerHTML = "";
+      items.forEach(rec=>{
+        const row = document.createElement("div"); row.className = "item";
+        const left = document.createElement("div"); left.style.flex = "1";
+        const ok = rec.ok === true ? "✅" : (rec.ok === false ? "❌" : "❔");
+        left.textContent = `${rec.task_id} [${rec.split} test ${rec.test_index}] ${ok}`;
+        const right = document.createElement("div"); right.className="chip"; right.textContent = rec.output_hash || "—";
+        const detBtn = document.createElement("button"); detBtn.className = "btn"; detBtn.textContent = "Details";
+        row.appendChild(left); row.appendChild(right); row.appendChild(detBtn);
+        els.recentList.appendChild(row);
+
+        const details = document.createElement("div");
+        details.style.display = "none";
+        details.style.margin = "6px 0 10px 0";
+        details.style.padding = "6px";
+        details.style.border = "1px solid #1f2732";
+        details.style.borderRadius = "8px";
+        details.style.background = "#0f1520";
+
+        let html = "";
+        if (rec.nlp_program){
+          html += `<div class="muted" style="margin-bottom:4px;">NLP Program</div>`;
+          html += `<pre class="chip" style="white-space:pre-wrap; display:block; max-height:160px; overflow:auto;">${escapeHtml(rec.nlp_program)}</pre>`;
+        }
+        if (rec.variations && rec.variations.length){
+          html += `<div class="muted" style="margin:6px 0 4px 0;">Variations</div>`;
+          html += `<ol style="padding-left:18px; margin:0;">` + rec.variations.map(v=>`<li style="margin:4px 0;"><span class="chip" style="white-space:pre-wrap; display:inline-block;">${escapeHtml(v)}</span></li>`).join("") + `</ol>`;
+        }
+        if (rec.llm_error){
+          html += `<div class="muted" style="color:#fca5a5; margin-top:6px;">LLM error: ${escapeHtml(rec.llm_error)}</div>`;
+        }
+        if (!html){ html = `<div class="muted">No LLM details</div>`; }
+        details.innerHTML = html;
+        els.recentList.appendChild(details);
+
+        detBtn.onclick = ()=>{ details.style.display = details.style.display === "none" ? "block" : "none"; };
+      });
+    }catch(e){
+      els.recentList.innerHTML = "<div class=\"muted\">Failed to load recent</div>";
+    }
+  }
+
+  // ---------- Actions ----------
+  els.task.onchange = ()=>{ /* single current task; ignore index change */ };
+  els.allTasks.onchange = ()=>{ const id = els.allTasks.value; if (id) loadTaskById(id); };
+  els.trainIdx.onchange = ()=>{ S.trainIdx=+els.trainIdx.value; loadTrainPair(); };
+  els.testIdx.onchange = ()=>{ S.testIdx=+els.testIdx.value; loadTest(); };
+
+  els.mode.onchange = ()=>{ S.mode = els.mode.value; };
+  els.split.onchange = async ()=>{
+    S.split = els.split.value;
+    await loadTaskIds();
+    const first = S.taskIds[0];
+    if (first) await loadTaskById(first); else { ARC_DATASET=[]; syncSelectors(); }
+  };
+
+  els.resize.onclick = ()=>{
+    let nh = Math.max(1, Math.min(50, parseInt(els.rows.value||"1")));
+    let nw = Math.max(1, Math.min(50, parseInt(els.cols.value||"1")));
+    const oh=S.output.length, ow=S.output[0].length;
+    const g = Array.from({length:nh},()=>Array.from({length:nw},()=>0));
+    for (let r=0;r<Math.min(nh,oh);r++){ for (let c=0;c<Math.min(nw,ow);c++){ g[r][c]=S.output[r][c]; } }
+    S.output=g; redrawOut(); setIndicator(null);
+  };
+
+  els.copyFromInput.onclick = ()=>{
+    const curr = ARC_DATASET[0]; const test = curr?.test[S.testIdx]; if (!test) return;
+    S.output = copyGrid(test.input); redrawOut(); setIndicator(null);
+  };
+  els.clearGrid.onclick = ()=>{
+    S.output = Array.from({length:S.output.length},()=>Array.from({length:S.output[0].length},()=>0)); redrawOut(); setIndicator(null);
+  };
+  els.resetGrid.onclick = ()=>{ loadTest(); };
+
+  els.submit.onclick = ()=>{
+    // Validate if GT available (solutions available for training split); otherwise neutral
+    let ok = null;
+    const gtList = S.gt;
+    if (gtList && Array.isArray(gtList) && gtList[S.testIdx]){
+      const gt = gtList[S.testIdx];
+      ok = true;
+      if (!gt || S.output.length!==gt.length || S.output[0].length!==gt[0].length) ok=false;
+      else{
+        outer: for (let r=0;r<gt.length;r++){
+          for (let c=0;c<gt[0].length;c++){ if ((+S.output[r][c])!==(+gt[r][c])) { ok=false; break outer; } }
+        }
+      }
+    }
+    setIndicator(ok);
+    // Persist green once achieved
+    if (ok === true){ markOkPersistent(); }
+  };
+
+  els.save.onclick = async ()=>{
+    try{
+      const curr = ARC_DATASET[0]; if (!curr) return;
+      const id = curr.task_id;
+      const payload = {
+        task_id: id,
+        split: S.split,
+        test_index: S.testIdx,
+        output: S.output,
+        insts: S.inst[id] || [],
+      };
+      const res = await postJSON(`${API_BASE}/api/save`, payload);
+      const ok = res?.record?.ok;
+      if (ok===true) setIndicator(true);
+      else if (ok===false) setIndicator(false);
+      else setIndicator(null);
+      const h = (res && res.record && res.record.output_hash) ? res.record.output_hash : gridHash(S.output);
+      els.hash.textContent = h;
+
+      // Auto-replace Inst with LLM-generated program as a single block; update variations
+      const nlp = res && res.record && res.record.nlp_program;
+      const vars = res && res.record && res.record.variations;
+      if (nlp && typeof nlp === 'string'){
+        S.inst[id] = [nlp]; // store as one block
+        persistInst();
+        refreshInst();
+      }
+      if (vars && Array.isArray(vars)){
+        S.vars[id] = vars;
+        persistVars();
+        refreshVars();
+      }
+      // Mark persistent green if save evaluated correct
+      if (ok === true){ markOkPersistent(); }
+
+      refreshRecent();
+      refreshHashes();
+    }catch(err){
+      console.error("Save failed", err);
+      setIndicator(false);
+      alert("Save failed: "+err);
+    }
+  };
+
+  els.downloadSaved.onclick = ()=>{ window.location.href = `${API_BASE}/api/download/saved`; };
+
+  els.saveInst.onclick = ()=>{
+    const txt = els.instText.value.trim(); if (!txt) return;
+    const curr = ARC_DATASET[0]; if (!curr) return; const id = curr.task_id;
+    if (!S.inst[id]) S.inst[id]=[];
+    S.inst[id].push(txt); els.instText.value=""; persistInst(); refreshInst();
+  };
+  els.delInst.onclick = ()=>{
+    const curr = ARC_DATASET[0]; if (!curr) return; const id = curr.task_id;
+    const arr = S.inst[id] || []; arr.pop(); S.inst[id]=arr; persistInst(); refreshInst();
+  };
+
+  els.clearVars.onclick = ()=>{
+    const curr = ARC_DATASET[0]; if (!curr) return; const id = curr.task_id;
+    S.vars[id] = [];
+    persistVars();
+    refreshVars();
+  };
+
+  els.refreshRecent.onclick = ()=>{ refreshRecent(); };
+  els.refreshHashes.onclick = ()=>{ refreshHashes(); };
+
+  // ---------- Boot ----------
+  function bootWithMock(){
+    ARC_DATASET = [MOCK_DATASET[0]]; S.gt = null; S.currentTaskId = ARC_DATASET[0].task_id;
+    S.taskIds = [S.currentTaskId];
+    buildPalette();
+    syncSelectors();
+    loadTrainPair();
+    loadTest();
+    refreshRecent();
+    bindCanvas();
+  }
+
+  (async function init(){
+    try{
+      loadPersistedInst();
+      loadPersistedVars();
+      loadPersistedOk();
+      // Verify backend health quickly (optional)
+      try { await getJSON(`${API_BASE}/api/health`); } catch(e) {}
+      await loadTaskIds();
+      const first = S.taskIds[0];
+      buildPalette();
+      bindCanvas();
+      if (first) await loadTaskById(first); else bootWithMock();
+      refreshRecent();
+    }catch(err){
+      console.warn("Init falling back to mock:", err);
+      bootWithMock();
+    }
+  })();
+  </script>
+</body>
+</html>
